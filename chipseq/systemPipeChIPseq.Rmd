@@ -154,9 +154,8 @@ source("systemPipeChIPseq_Fct.R")
 The `targets` file defines all FASTQ files and sample comparisons of the analysis workflow.
 
 ```{r load_targets_file, eval=TRUE}
-targetspath <- system.file("extdata", "targets_chip.txt", package="systemPipeR")
-targets <- read.delim(targetspath, comment.char = "#")
-targets[1:4,-c(5,6)]
+targets <- read.delim("targets_chip.txt", comment.char = "#")
+targets
 ```
 
 ## Read quality filtering and trimming
@@ -187,7 +186,7 @@ above quality cutoffs and mean quality distribution. The results are
 written to a PDF file named `fastqReport.pdf`.
 
 ```{r fastq_report, eval=FALSE}
-args <- systemArgs(sysma="param/tophat.param", mytargets="targets_chip.txt")
+args <- systemArgs(sysma="param/tophat.param", mytargets="targets_chip_trim.txt")
 library(BiocParallel); library(BatchJobs)
 f <- function(x) {
     library(systemPipeR)
@@ -198,9 +197,8 @@ funs <- makeClusterFunctionsSLURM("slurm.tmpl")
 param <- BatchJobsParam(length(args), resources=list(walltime="00:20:00", ntasks=1, ncpus=1, memory="2G"), cluster.functions=funs)
 register(param)
 fqlist <- bplapply(seq(along=args), f)
-pdf("./results/fastqReport.pdf", height=18, width=4*length(fqlist))
-seeFastqPlot(unlist(fqlist, recursive=FALSE))
-dev.off()
+pdf("./results/fastqReport.pdf", height=18, width=4*length(fqlist)); seeFastqPlot(unlist(fqlist, recursive=FALSE)); dev.off()
+png("./results/fastqReport.png", height=18, width=4*length(fqlist), units="in", res=300); seeFastqPlot(unlist(fqlist, recursive=FALSE)); dev.off()
 ``` 
 
 ![](fastqReport.png)
@@ -329,7 +327,8 @@ in the corresponding `*.param` file(s).
 ```{r call_peaks_macs_noref, eval=FALSE}
 args <- systemArgs(sysma="param/macs2_noinput.param", mytargets="targets_mergeBamByFactor.txt")
 sysargs(args)[1] # Command-line parameters for first FASTQ file
-moduleload(module="python", envir=c("PATH", "LD_LIBRARY_PATH", "PYTHONPATH"))
+# moduleload(module="python", envir=c("PATH", "LD_LIBRARY_PATH", "PYTHONPATH")) # Temp solution due to Python path change
+moduleload(module="python")
 runCommandline(args)
 file.exists(outpaths(args))
 writeTargetsout(x=args, file="targets_macs.txt", overwrite=TRUE)
@@ -384,7 +383,7 @@ information using the `ChIPpeakAnno` and `ChIPseeker` packages, respectively
 
 ```{r chip_peak_anno, eval=FALSE}
 library(ChIPpeakAnno); library(GenomicFeatures)
-args <- systemArgs(sysma="param/annotate_peaks.param", mytargets="targets_macs.txt")
+args <- systemArgs(sysma="param/annotate_peaks.param", mytargets="targets_macs_input.txt")
 # txdb <- loadDb("./data/tair10.sqlite")
 txdb <- makeTxDbFromGFF(file="data/tair10.gff", format="gff", dataSource="TAIR", organism="Arabidopsis thaliana")
 ge <- genes(txdb, columns=c("tx_name", "gene_id", "tx_type")) 
@@ -448,7 +447,7 @@ files, one for each peak set.
 
 ```{r count_peak_ranges, eval=FALSE}
 library(GenomicRanges)
-args <- systemArgs(sysma="param/count_rangesets.param", mytargets="targets_macs.txt")
+args <- systemArgs(sysma="param/count_rangesets.param", mytargets="targets_macs_input.txt")
 args_bam <- systemArgs(sysma=NULL, mytargets="targets_bam.txt")
 bfl <- BamFileList(outpaths(args_bam), yieldSize=50000, index=character())
 countDFnames <- countRangeset(bfl, args, mode="Union", ignore.strand=TRUE)
@@ -476,9 +475,31 @@ writeTargetsout(x=args_diff, file="targets_rundiff.txt", overwrite=TRUE)
 
 The following performs GO term enrichment analysis for each annotated peak set.
 
+## Obtain gene-to-GO mappings
+
+```{r go_mappings, eval=FALSE}
+library("biomaRt")
+listMarts() # To choose BioMart database
+listMarts(host="plants.ensembl.org")
+m <- useMart("plants_mart", host="plants.ensembl.org")
+listDatasets(m)
+m <- useMart("plants_mart", dataset="athaliana_eg_gene", host="plants.ensembl.org")
+listAttributes(m) # Choose data types you want to download
+go <- getBM(attributes=c("go_id", "tair_locus", "namespace_1003"), mart=m)
+go <- go[go[,3]!="",]; go[,3] <- as.character(go[,3])
+go[go[,3]=="molecular_function", 3] <- "F"; go[go[,3]=="biological_process", 3] <- "P"; go[go[,3]=="cellular_component", 3] <- "C"
+go[1:4,]
+dir.create("./data/GO")
+write.table(go, "data/GO/GOannotationsBiomart_mod.txt", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+catdb <- makeCATdb(myfile="data/GO/GOannotationsBiomart_mod.txt", lib=NULL, org="", colno=c(1,2,3), idconv=NULL)
+save(catdb, file="data/GO/catdb.RData")
+```
+
+## Run GO term enrichment analysis
+
 ```{r go_enrich, eval=FALSE}
 args <- systemArgs(sysma="param/macs2.param", mytargets="targets_bam_ref.txt")
-args_anno <- systemArgs(sysma="param/annotate_peaks.param", mytargets="targets_macs.txt")
+args_anno <- systemArgs(sysma="param/annotate_peaks.param", mytargets="targets_macs_input.txt")
 annofiles <- outpaths(args_anno)
 gene_ids <- sapply(names(annofiles), function(x) unique(as.character(read.delim(annofiles[x])[,"geneId"])), simplify=FALSE)
 load("data/GO/catdb.RData")
@@ -501,7 +522,7 @@ as expected by some motif discovery tools, such as `BCRANK`.
 
 ```{r parse_peak_sequences, eval=FALSE}
 library(Biostrings); library(seqLogo); library(BCRANK)
-args <- systemArgs(sysma="param/annotate_peaks.param", mytargets="targets_macs.txt")
+args <- systemArgs(sysma="param/annotate_peaks.param", mytargets="targets_macs_input.txt")
 rangefiles <- infile1(args)
 for(i in seq(along=rangefiles)) {
     df <- read.delim(rangefiles[i], comment="#")
