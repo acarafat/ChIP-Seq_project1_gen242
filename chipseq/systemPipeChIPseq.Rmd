@@ -219,7 +219,7 @@ in the `bowtieSE.param` file.
 The following submits 18 alignment jobs via a scheduler to a computer cluster.
 
 ```{r bowtie2_align, eval=FALSE}
-args <- systemArgs(sysma="param/bowtieSE.param", mytargets="targets_chip_trim.txt")
+args <- systemArgs(sysma="param/bowtieSE.param", mytargets="targets_chip.txt")
 sysargs(args)[1] # Command-line parameters for first FASTQ file
 moduleload(modules(args)) # Skip if a module system is not used
 system("bowtie2-build ./data/tair10.fasta ./data/tair10.fasta") # Indexes reference genome
@@ -468,7 +468,7 @@ the fold change and FDR cutoffs provided under the `dbrfilter` argument.
 args_diff <- systemArgs(sysma="param/rundiff.param", mytargets="targets_countDF.txt")
 cmp <- readComp(file=args_bam, format="matrix") 
 dbrlist <- runDiff(args=args_diff, diffFct=run_edgeR, targets=targetsin(args_bam), 
-                    cmp=cmp[[1]], independent=TRUE, dbrfilter=c(Fold=2, FDR=1))
+                    cmp=cmp[[1]], independent=TRUE, dbrfilter=c(Fold=0.75, FDR=.1))
 writeTargetsout(x=args_diff, file="targets_rundiff.txt", overwrite=TRUE)
 ```
 
@@ -492,7 +492,7 @@ go <- go[go[,3]!="",]; go[,3] <- as.character(go[,3])
 go[go[,3]=="molecular_function", 3] <- "F"; go[go[,3]=="biological_process", 3] <- "P"; go[go[,3]=="cellular_component", 3] <- "C"
 go[1:4,]
 dir.create("./data/GO")
-iwrite.table(go, "data/GO/GOannotationsBiomart_mod.txt", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
+write.table(go, "data/GO/GOannotationsBiomart_mod.txt", quote=FALSE, row.names=FALSE, col.names=FALSE, sep="\t")
 catdb <- makeCATdb(myfile="data/GO/GOannotationsBiomart_mod.txt", lib=NULL, org="", colno=c(1,2,3), idconv=NULL)
 save(catdb, file="data/GO/catdb.RData")
 ```
