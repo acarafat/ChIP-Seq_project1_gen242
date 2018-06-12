@@ -1,4 +1,4 @@
----
+f--
 title: ChIP-Seq Workflow Template 
 author: "First/last name (first.last@ucr.edu)"
 date: "Last update: `r format(Sys.time(), '%d %B, %Y')`" 
@@ -276,6 +276,14 @@ library(rtracklayer); library(GenomicRanges); library(Rsamtools); library(Genomi
 aligns <- readGAlignments(outpaths(args)[1])
 cov <- coverage(aligns)
 cov
+
+##Plotting chromosomes from cov
+z <- GRanges("Chr5",IRanges(1,length(cov$Chr5)))
+ynum <- as.numeric(cov$Chr5[ranges(z)])
+png(file='chr5.png')
+plot(ynum, type="l", col="blue", lwd=2)
+dev.off()
+
 ```
 
 ## Resizing aligned reads
@@ -292,9 +300,11 @@ islands[[1]]
 ## Plot coverage for defined region
 ```{r plot_coverage, eval=FALSE}
 library(ggbio)
-myloc <- c("Chr1", 1, 100000)
+myloc <- c("Chr1", 1, 35000000)
 ga <- readGAlignments(outpaths(args)[1], use.names=TRUE, param=ScanBamParam(which=GRanges(myloc[1], IRanges(as.numeric(myloc[2]), as.numeric(myloc[3])))))
+pdf(file= 'test.pdf')
 autoplot(ga, aes(color = strand, fill = strand), facets = strand ~ seqnames, stat = "coverage")
+dev.off()
 ```
 
 # Peak calling with MACS2
@@ -503,7 +513,7 @@ save(catdb, file="data/GO/catdb.RData")
 args <- systemArgs(sysma="param/macs2.param", mytargets="targets_bam_ref.txt")
 args_anno <- systemArgs(sysma="param/annotate_peaks.param", mytargets="targets_macs_input.txt")
 annofiles <- outpaths(args_anno)
-gene_ids <- sapply(names(annofiles), function(x) unique(as.character(read.delim(annofiles[x])[,"gene_id"])), simplify=FALSE)
+gene_ids <- sapply(names(annofiles), function(x) unique(as.character(read.delim(annofiles[x])[,"geneId"])), simplify=FALSE)
 load("data/GO/catdb.RData")
 BatchResult <- GOCluster_Report(catdb=catdb, setlist=gene_ids, method="all", id_type="gene", CLSZ=2, cutoff=0.9, gocats=c("MF", "BP", "CC"), recordSpecGO=NULL)
 ```
